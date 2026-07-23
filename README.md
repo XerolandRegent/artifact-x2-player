@@ -4,8 +4,11 @@ The music player half of ARTIFACT X-II: a Raspberry Pi feeding an ES9038Q2M DAC,
 with a browser control surface built around a reel you grab to scrub and touch
 to pause.
 
-This release covers the player only. The haptic motor firmware and the vinyl
-mode engine integration are not included.
+Put a finger on the reel while it is spinning and the music stops under your
+hand. Lift it, and the song runs on.
+
+This release covers the player only, which is phase 1 of the project. The haptic
+motor firmware and the vinyl mode scratch engine are not included here.
 
 ## Read this before you install it
 
@@ -15,9 +18,17 @@ rewrite tags, and, if you add the optional sudoers rule below, shut the machine
 down.
 
 That is a reasonable trade on a home network you control. It is not safe to
-expose to the internet. Do not port forward it. If you want access from
-outside your network, put it behind Tailscale, WireGuard, or an authenticating
-reverse proxy.
+expose to the internet. Do not port forward it. If you want access from outside
+your network, put it behind Tailscale, WireGuard, or an authenticating reverse
+proxy.
+
+## What is in here
+
+```
+artifactd.py          FastAPI service: MPD bridge, WebSocket state, uploads
+static/index.html     the control surface, one self-contained file
+requirements.txt      Python dependencies
+```
 
 ## What you need
 
@@ -62,8 +73,16 @@ pcm.artifact32 {
 }
 ```
 
-If you are running this DAC and something sounds broken, start there. It cost me
-most of a night and seven wrong suspects.
+To hear the difference, with headphones plugged into the HAT:
+
+```
+speaker-test -D plughw:DAC,0 -c 2 -r 48000 -t sine -f 440 -l 1
+speaker-test -D artifact32   -c 2 -r 48000 -t sine -f 440 -l 1
+```
+
+The first is noise. The second is a clean tone. If you are running this DAC and
+something sounds broken, start there. It cost me most of a night and seven wrong
+suspects.
 
 ## MPD
 
@@ -92,12 +111,22 @@ sudo chown -R YOURUSER:YOURUSER /var/lib/mpd
 sudo systemctl enable --now mpd
 ```
 
+To confirm nothing is resampling, play a 24-bit 96kHz file and read what the
+hardware is actually receiving:
+
+```
+cat /proc/asound/card0/pcm0p/sub0/hw_params
+```
+
+It should report `rate: 96000`. If it says 44100, something in the chain is
+converting.
+
 ## artifactd
 
 ```
-mkdir -p ~/artifact/static ~/music
-cp artifactd.py requirements.txt ~/artifact/
-cp index.html ~/artifact/static/
+sudo apt install -y python3-venv git
+git clone https://github.com/XerolandRegent/artifact-x2-player.git ~/artifact
+mkdir -p ~/music
 
 python3 -m venv ~/artifact/venv
 ~/artifact/venv/bin/pip install -r ~/artifact/requirements.txt
@@ -106,12 +135,13 @@ cd ~/artifact && ./venv/bin/python artifactd.py
 
 Open `http://your-pi-address:8080`.
 
-Music paths default to `~/music` and can be overridden with the
-`ARTIFACT_MUSIC_DIR` environment variable.
+Music defaults to `~/music`, overridable with the `ARTIFACT_MUSIC_DIR`
+environment variable.
 
 ### Running at boot
 
-Create `/etc/systemd/system/artifactd.service`, substituting your username:
+Create `/etc/systemd/system/artifactd.service`, substituting your username in
+all four places:
 
 ```
 [Unit]
@@ -131,12 +161,19 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
-Then `sudo systemctl enable --now artifactd`.
+Then:
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable --now artifactd
+```
+
+The Pi now boots straight into being a music player.
 
 ### Optional: shutdown from the interface
 
-Only add this if you understand the consequence, which is that anyone who can
-reach port 8080 can power the machine off.
+Only add this if you accept the consequence, which is that anyone who can reach
+port 8080 can power the machine off.
 
 ```
 echo 'YOURUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl poweroff' | \
@@ -155,6 +192,22 @@ volume, with a detent per step.
 Drag audio files onto the device from a desktop browser to upload them, or use
 the add music row in the system screen from a phone.
 
+Settings include two chassis finishes, five screen palettes, a layout that
+mirrors for left handed use, and live tuning for scrub ratio, trigger ramp and
+detent step.
+
+## Troubleshooting
+
+No sound at all: check `aplay -l` lists the DAC, then `systemctl status mpd`.
+
+Music buried in noise: you skipped the `.asoundrc` step above.
+
+Service will not start: `journalctl -u artifactd -n 30`. Usually port 8080 is
+still held by a copy running in the foreground.
+
+Interface says offline: `artifactd` is running but MPD is not. Try
+`sudo systemctl start mpd.socket mpd`.
+
 ## Standing on shoulders
 
 The haptic architecture descends from Scott Bezek's SmartKnob, which solved
@@ -165,6 +218,23 @@ Vinyl mode, not included in this release, runs on an engine descended from xwax
 by way of SC1000 and ScratchTJ, who worked out how to drive a scratch engine
 from a magnetic angle sensor instead of timecode vinyl.
 
+Teenage Engineering taught everyone what digital audio hardware could feel like.
+
 ## Licence
 
-Add your chosen licence here before publishing.
+Copyright 2026 XEROTECH LTD.
+
+Licensed under the GNU Affero General Public License v3.0. See `LICENSE` for the
+full text.
+
+The vinyl mode engine derives from xwax, which is GPL-2.0, and will be published
+separately under that licence rather than combined into this repository.
+
+ARTIFACT and XEROTECH AI are trademarks of XEROTECH LTD. This licence covers the
+source code only. It grants no rights to use the ARTIFACT or XEROTECH AI names,
+logos, or product identity.
+
+## Project
+
+Build logs and the hardware side of the project are at
+[https://hackaday.io/project/206236](https://hackaday.io/project/206236-artifact-x-ii)
